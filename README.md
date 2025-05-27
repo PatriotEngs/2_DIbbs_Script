@@ -2,13 +2,11 @@
 
 This project scrapes FSC codes from the DLA DIBBS portal, filters them based on issue dates and quantity, saves the result to Excel, and uploads it to Google Drive.
 
-## Configuration
+## Behavior
 
-Set these environment variables on Render or in your `.env` file for local runs:
-
-- `ISSUED_FROM=YYYY-MM-DD`
-- `ISSUED_TO=YYYY-MM-DD`
-- `MIN_QTY=10`
+- `issued_from` = yesterday
+- `issued_to` = end of next month
+- `min_qty` = 5
 
 ## Setup
 
