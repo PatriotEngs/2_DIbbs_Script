@@ -1,4 +1,4 @@
-# dibbs_scraper_render.py (with debug prints)
+# dibbs_scraper_render.py (with failsafe debug start and correct entry point)
 from datetime import datetime, timedelta
 import os
 import time
@@ -13,7 +13,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-print("✅ Script started")
+print("🚀 SCRIPT EXECUTION STARTED")
 
 # === Configuration ===
 today = datetime.today()
