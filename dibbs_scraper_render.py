@@ -1,4 +1,4 @@
-# dibbs_scraper_render.py
+# dibbs_scraper_render.py (with debug prints)
 from datetime import datetime, timedelta
 import os
 import time
@@ -13,6 +13,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+print("✅ Script started")
+
 # === Configuration ===
 today = datetime.today()
 issued_from = (today - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -21,6 +23,10 @@ issued_to = next_month.replace(day=1) + timedelta(days=31)
 issued_to = issued_to.replace(day=1) - timedelta(days=1)
 issued_to = issued_to.strftime("%Y-%m-%d")
 min_qty = 5
+
+print("✅ Issued From:", issued_from)
+print("✅ Issued To:", issued_to)
+print("✅ Min Qty:", min_qty)
 
 search_fsc_codes = [
     "1015", "1055", "1450", "1560", "1620", "1680", "2090", "2540", "2590",
@@ -41,23 +47,28 @@ solicitations = []
 
 # === Upload to Google Drive ===
 def upload_to_drive(file_path):
+    print("✅ Starting Google Drive upload...")
     SCOPES = ['https://www.googleapis.com/auth/drive']
     SERVICE_ACCOUNT_FILE = 'service_account.json'
 
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build('drive', 'v3', credentials=creds)
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('drive', 'v3', credentials=creds)
 
-    file_metadata = {
-        'name': os.path.basename(file_path),
-        'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    }
-    media = MediaFileUpload(file_path, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    print(f"Uploaded to Google Drive with ID: {file.get('id')}")
+        file_metadata = {
+            'name': os.path.basename(file_path),
+            'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+        media = MediaFileUpload(file_path, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        print(f"✅ Uploaded to Google Drive with ID: {file.get('id')}")
+    except Exception as e:
+        print(f"❌ Google Drive upload failed: {e}")
 
 # === Main Process ===
 def scrape():
+    print("✅ Initializing Selenium driver")
     driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
     driver.get("https://www.dibbs.bsm.dla.mil/RFQ/RfqFsc.aspx")
 
@@ -65,18 +76,26 @@ def scrape():
         WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "butAgree")))
         driver.find_element(By.ID, "butAgree").click()
         time.sleep(1)
+        print("✅ Clicked DoD warning")
     except:
-        pass
+        print("ℹ️ No DoD warning appeared")
 
     for fsc_code in search_fsc_codes:
+        print(f"🔍 Searching FSC: {fsc_code}")
         try:
             driver.get("https://www.dibbs.bsm.dla.mil/RFQ/RfqFsc.aspx")
             WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.ID, "ctl00_cph1_lstValue")))
             select_element = Select(driver.find_element(By.ID, "ctl00_cph1_lstValue"))
+            matched = False
             for option in select_element.options:
                 if option.text.strip().startswith(fsc_code):
                     select_element.select_by_visible_text(option.text.strip())
+                    matched = True
                     break
+            if not matched:
+                print(f"⚠️ FSC {fsc_code} not found")
+                continue
+
             driver.find_element(By.ID, "ctl00_cph1_but1").click()
 
             try:
@@ -84,6 +103,7 @@ def scrape():
                     EC.presence_of_element_located((By.ID, "ctl00_cph1_grdRfqSearch"))
                 )
             except:
+                print(f"⚠️ No data for FSC {fsc_code}")
                 continue
 
             try:
@@ -94,8 +114,9 @@ def scrape():
                 time.sleep(0.6)
                 sort_btn.click()
                 time.sleep(0.6)
+                print(f"✅ Sorted results for FSC {fsc_code}")
             except:
-                pass
+                print("ℹ️ Skipping sort")
 
             for page_count in range(1, 6):
                 try:
@@ -135,6 +156,7 @@ def scrape():
                             "ReturnByDate": cells[8].text.strip()
                         })
 
+                    print(f"✅ Page {page_count}: {len(solicitations)} total so far")
                     next_link = driver.find_elements(By.XPATH, f"//a[text()='{page_count + 1}']")
                     if next_link:
                         next_link[0].click()
@@ -144,18 +166,20 @@ def scrape():
                 except:
                     break
         except Exception as e:
-            print(f"Error with FSC {fsc_code}: {e}")
+            print(f"❌ Error with FSC {fsc_code}: {e}")
 
     driver.quit()
+    print("✅ Selenium session closed")
 
     if solicitations:
         df = pd.DataFrame(solicitations)
         output_path = f"/tmp/DIBBS_Solicitations_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
         df.to_excel(output_path, index=False)
-        print(f"Saved to: {output_path}")
+        print(f"✅ Saved Excel file to: {output_path}")
+        print(f"📦 Total solicitations: {len(solicitations)}")
         upload_to_drive(output_path)
     else:
-        print("No solicitations found.")
+        print("⚠️ No solicitations found.")
 
 if __name__ == "__main__":
     scrape()
